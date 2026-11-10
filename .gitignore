@@ -1,5 +1,9 @@
 .env
 .env.local
+.env.*
+!.env.example
+*.pem
+*.key
 config.json
 config.json.bak
 login_failures.json
@@ -23,8 +27,10 @@ usedDebateData.json
 usedTopics.json
 usedVozThreads.json
 usedVozThreads.json.tmp
+usedForumThreads.json
 afkMessages.json
 notes.json
 userbanks.json
 status_config.json
 images/
+dashboard/public/storage/

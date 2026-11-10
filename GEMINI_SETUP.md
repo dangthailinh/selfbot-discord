@@ -4,9 +4,9 @@ Tính năng này cho mỗi tài khoản một nhân cách và bộ nhớ hội t
 
 ## Cấu hình
 
-1. Thu hồi toàn bộ Gemini API key đã từng gửi qua chat hoặc ghi trong mã nguồn, rồi tạo key mới.
-2. Sao chép `.env.example` thành `.env.local` để key không nằm trong tệp `.env` cũ đang được Git theo dõi.
-3. Điền các Gemini key mới vào `.env.local`:
+1. Nếu key từng bị chia sẻ hoặc commit, thu hồi rồi tạo key mới.
+2. Sao chép `.env.example` thành `.env.local` nếu chưa có file cấu hình riêng. Cả `.env` và `.env.local` đều được loại khỏi Git; `.env.local` ghi đè các giá trị trùng trong `.env`.
+3. Điền key của dịch vụ đang dùng vào `.env.local`; để trống provider không sử dụng. Ví dụ dưới đây chỉ chứa placeholder, phải thay trước khi chạy:
 
 ```dotenv
 GEMINI_API_KEYS=key_moi_1,key_moi_2,key_moi_3
@@ -14,13 +14,19 @@ GEMINI_MODEL=gemini-3.6-flash
 GEMINI_MENTION_ENABLED=true
 GROQ_API_KEYS=gsk_key_du_phong
 GROQ_MODEL=qwen/qwen3.6-27b
+TOKENROUTER_API_KEYS=key_tokenrouter_cua_ban
+TOKENROUTER_MODEL=qwen/qwen3.8-max-free
 ```
 
-Không thêm khoảng trắng quanh dấu phẩy. Hệ thống tự luân phiên key sau mỗi phản hồi. Khi gặp `429`, key đó được đưa vào cooldown theo `Retry-After`/`RetryInfo` của Google hoặc backoff tăng dần; mỗi yêu cầu chỉ thử tối đa 3 key để tránh quét sạch quota trong vài giây.
+Các ID model trên là mặc định trong mã, không bảo đảm provider còn cung cấp hoặc mọi key đều truy cập được. Nếu gặp lỗi model, chọn ID khả dụng của provider tương ứng rồi khởi động lại. Xem [hướng dẫn cài đặt và cấu hình tài khoản](README.md#cài-đặt-và-chạy).
 
-Lưu ý: Gemini tính giới hạn theo Google Cloud project, không tính riêng cho từng API key. Vì vậy nhiều key cùng một project vẫn dùng chung RPM/TPM/RPD. Xoay key giúp bỏ qua key lỗi hoặc key thuộc project khác, nhưng không làm tăng quota của cùng một project.
+Hệ thống tách key bằng dấu phẩy và bỏ khoảng trắng hai đầu, tự luân phiên key sau mỗi phản hồi. Khi gặp `429`, key đó được đưa vào cooldown theo `Retry-After`/`RetryInfo` của Google hoặc backoff tăng dần; mỗi yêu cầu mặc định chỉ thử tối đa 3 key Gemini để tránh quét sạch quota trong vài giây.
 
-Groq là tầng dự phòng tự động. Thứ tự xử lý là `Gemini → Groq → câu trả lời cục bộ`. Groq chỉ nhận yêu cầu sau khi các key Gemini thử trong lượt đó đều lỗi, bị từ chối hoặc đang cooldown. Key Groq cũng được xoay vòng và cooldown riêng; nhiều key thuộc cùng một Groq organization vẫn dùng chung giới hạn của organization.
+Lưu ý: Gemini tính giới hạn theo Google Cloud project, không tính riêng cho từng API key. Vì vậy nhiều key cùng một project vẫn dùng chung RPM/TPM/RPD. Xoay key giúp bỏ qua key lỗi hoặc key thuộc project khác, nhưng không làm tăng quota của cùng một project. Xem [quota Gemini](https://ai.google.dev/gemini-api/docs/rate-limits).
+
+Thứ tự gọi dịch vụ là `Gemini → Groq → TokenRouter`. Tầng dự phòng chỉ được gọi nếu đã cấu hình key và tầng trước không trả được kết quả. Key của mỗi provider có vòng xoay và cooldown riêng. Khi tất cả provider đều lỗi, selfchat dùng câu đáp cục bộ; luồng mention/reply gửi thông báo lỗi kết nối. Nhiều key thuộc cùng một Groq organization vẫn dùng chung [giới hạn của organization](https://console.groq.com/docs/rate-limits).
+
+Nội dung hội thoại dùng làm ngữ cảnh được gửi tới provider đang xử lý lượt đó, bao gồm các provider dự phòng đã cấu hình. `node scripts/checkGemini.mjs` có thể kiểm tra Gemini bằng API thật và tiêu thụ quota; không kiểm tra Groq/TokenRouter.
 
 ## Nhân cách từng tài khoản
 
@@ -89,6 +95,7 @@ Muốn đặt lại toàn bộ ký ức, dừng chương trình rồi xóa `self
 
 ## Lưu ý
 
-- Bộ nhớ hiện chỉ tồn tại trong RAM và được xóa khi khởi động lại chương trình.
+- Lịch sử AI mention/reply chỉ tồn tại trong RAM, mất khi khởi động lại hoặc dùng `;talkbot clear`. Ký ức selfchat lưu trong `selfchat-memory.json` và tồn tại qua lần khởi động lại.
 - Nội dung AI gửi ra không được phép ping `@everyone`, `@here` hoặc tự tag người khác.
-- Selfbot dùng tài khoản người dùng có thể vi phạm điều khoản Discord và khiến tài khoản bị khóa. Phương án an toàn hơn là dùng ứng dụng bot chính thức với bot token.
+- Các lệnh `!selfchat...` dùng dấu `!` cố định và chỉ nhận từ tài khoản đang được quản lý. `!offall` dừng selfchat và tắt mention/reply, không dừng debate/debatevoz.
+- Discord không cho phép selfbot trên tài khoản người dùng và có thể khóa tài khoản; xem [thông báo chính thức](https://support.discord.com/hc/en-us/articles/115002192352-Automated-User-Accounts-Self-Bots). Repo này không chạy bằng bot token của ứng dụng bot chính thức.
